@@ -51,7 +51,7 @@ async function openPage(viewport, opts = {}) {
       window.scrollTo(0, y); await new Promise(r => setTimeout(r, 60));
     }
     window.scrollTo(0, 0);
-    document.querySelectorAll('.reveal').forEach(el => el.classList.add('in'));
+    document.querySelectorAll('.reveal,[data-reveal],[data-split],.reveal-on-scroll,[data-aos]').forEach(el => el.classList.add('in','aos-animate','is-visible'));
   });
   await page.waitForTimeout(600);
   return { ctx, page, consoleErrors, failed };
@@ -71,7 +71,7 @@ const meta = await d.page.evaluate(() => {
   const anchors = [...document.querySelectorAll('a[href^="#"]')].map(a => a.getAttribute('href')).filter(h => h.length > 1);
   const links = [...document.querySelectorAll('a[href]')].map(a => a.getAttribute('href'));
   const imgs = [...document.images].map(i => ({ src: i.currentSrc || i.src, alt: i.getAttribute('alt'), w: i.getAttribute('width'), h: i.getAttribute('height'), natural: i.naturalWidth }));
-  const headings = [...document.querySelectorAll('h1,h2,h3,h4,h5,h6')].map(h => +h.tagName[1]);
+  const headings = [...document.querySelectorAll('h1,h2,h3,h4,h5,h6')].filter(h => !h.closest('[aria-hidden="true"]')).map(h => +h.tagName[1]);
   const placeholders = (document.body.innerText.match(/\[[^\]\n]{2,80}\]|lorem ipsum/gi) || []);
   return {
     title: document.title, desc: q('meta[name="description"]')?.content || '',
@@ -116,6 +116,30 @@ meta.forms.forEach(f => {
 });
 if (meta.placeholders.length) add('info', 'placeholders', `Placeholder text still on page (client must supply): ${meta.placeholders.slice(0, 10).join(' | ')}${meta.placeholders.length > 10 ? ' …' : ''}`);
 
+// Motion & media accessibility
+const motion = await d.page.evaluate(() => {
+  let reducedRule = false, keyframes = 0, transitions = 0;
+  for (const sheet of document.styleSheets) {
+    let rules; try { rules = sheet.cssRules; } catch { continue; }
+    const scan = list => { for (const r of list) {
+      if (r.conditionText && /prefers-reduced-motion/.test(r.conditionText)) reducedRule = true;
+      if (r.type === 7) keyframes++;
+      if (r.style && (r.style.transition || r.style.animation)) transitions++;
+      if (r.cssRules) scan(r.cssRules);
+    } };
+    scan(rules);
+  }
+  const scriptMQ = [...document.scripts].some(s => /prefers-reduced-motion/.test(s.textContent));
+  const videos = [...document.querySelectorAll('video')].map(v => ({ autoplay: v.autoplay, muted: v.muted, controls: v.controls, src: v.currentSrc || v.querySelector('source')?.src || '' }));
+  const running = document.getAnimations().filter(a => a.effect?.getComputedTiming().iterations === Infinity).length;
+  return { reducedRule: reducedRule || scriptMQ, keyframes, transitions, videos, running };
+});
+if ((motion.keyframes || motion.transitions > 5) && !motion.reducedRule) add('error', 'reduced-motion', `Page has ${motion.keyframes} @keyframes and ${motion.transitions} transitions/animations but no prefers-reduced-motion handling`);
+motion.videos.filter(v => v.autoplay && !v.muted).forEach(v => add('error', 'video', `Autoplaying video with sound: ${v.src}`));
+motion.videos.filter(v => v.autoplay && !v.controls).forEach(v => add('warn', 'video', `Autoplay video without visible controls — provide a pause button (WCAG 2.2.2): ${v.src}`));
+if (motion.running > 6) add('warn', 'motion', `${motion.running} infinite animations running — make sure they are subtle, pausable, and off under reduced motion`);
+add('info', 'motion', `Motion: ${motion.keyframes} keyframes, ${motion.transitions} animated rules, ${motion.running} infinite animations, reduced-motion handling: ${motion.reducedRule ? 'yes' : 'no'}`);
+
 // Local relative links: check files exist.
 if (!isUrl) {
   const base = path.dirname(path.resolve(target));
@@ -135,16 +159,24 @@ if (!isUrl) {
   }
 }
 
-// Contrast (desktop)
+// Contrast (desktop). Resize the viewport to the full page so every element can be hit-tested,
+// then read the backgrounds actually painted beneath each text element (handles overlays & fixed headers).
+const fullH = Math.min(await d.page.evaluate(() => document.documentElement.scrollHeight), 16000);
+await d.page.setViewportSize({ width: 1366, height: fullH });
+await d.page.evaluate(() => window.scrollTo(0, 0));
+await d.page.waitForTimeout(400);
 const contrast = await d.page.evaluate(() => {
-  const parse = c => { const m = c.match(/rgba?\(([^)]+)\)/); if (!m) return null; const p = m[1].split(/[ ,/]+/).filter(Boolean).map(Number); return { r: p[0], g: p[1], b: p[2], a: p.length > 3 ? p[3] : 1 }; };
+  const parse = c => { const m = c && c.match(/rgba?\(([^)]+)\)/); if (!m) return null; const p = m[1].split(/[ ,/]+/).filter(Boolean).map(Number); return { r: p[0], g: p[1], b: p[2], a: p.length > 3 ? p[3] : 1 }; };
   const lum = ({ r, g, b }) => { const f = v => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; }; return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b); };
   const blend = (top, bottom) => ({ r: top.r * top.a + bottom.r * (1 - top.a), g: top.g * top.a + bottom.g * (1 - top.a), b: top.b * top.a + bottom.b * (1 - top.a), a: 1 });
-  const bgOf = el => {
+  const bgAt = (el, x, y) => {
+    const stack = document.elementsFromPoint(x, y);
+    const start = stack.indexOf(el); if (start < 0) return null;
     const layers = [];
-    for (let e = el; e; e = e.parentElement) {
+    for (const e of stack.slice(start)) {
       const cs = getComputedStyle(e);
-      if (cs.backgroundImage && cs.backgroundImage !== 'none') return null; // can't know (image/gradient)
+      if (cs.backgroundImage && cs.backgroundImage !== 'none') return null; // gradient/image: can't judge
+      if (+cs.opacity < 1) return null;
       const c = parse(cs.backgroundColor);
       if (c && c.a > 0) { layers.push(c); if (c.a >= 1) break; }
     }
@@ -157,10 +189,13 @@ const contrast = await d.page.evaluate(() => {
   while (walker.nextNode()) {
     const t = walker.currentNode; if (!t.textContent.trim()) continue;
     const el = t.parentElement; if (!el || seen.has(el)) continue; seen.add(el);
-    const cs = getComputedStyle(el); const r = el.getBoundingClientRect();
-    if (cs.visibility === 'hidden' || cs.display === 'none' || r.width === 0 || +cs.opacity === 0) continue;
+    const cs = getComputedStyle(el);
+    if (cs.visibility === 'hidden' || cs.display === 'none' || +cs.opacity === 0) continue;
     if (el.closest('[aria-hidden="true"]')) continue;
-    const fg = parse(cs.color); const bg = bgOf(el); if (!fg || !bg) continue;
+    const range = document.createRange(); range.selectNodeContents(t);
+    const r = range.getBoundingClientRect(); if (!r.width || !r.height) continue;
+    const fg = parse(cs.color); if (!fg) continue;
+    const bg = bgAt(el, r.left + Math.min(r.width / 2, 8), r.top + r.height / 2); if (!bg) continue;
     const fgb = blend(fg, bg);
     const L1 = lum(fgb), L2 = lum(bg); const ratio = (Math.max(L1, L2) + 0.05) / (Math.min(L1, L2) + 0.05);
     const size = parseFloat(cs.fontSize); const bold = +cs.fontWeight >= 700;
@@ -193,8 +228,8 @@ const mob = await m.page.evaluate(() => {
     if (e.matches('input[type=hidden]') || e.closest('[aria-hidden="true"]')) return false;
     const r = e.getBoundingClientRect(); return r.height < 24 || r.width < 24;
   }).slice(0, 10).map(e => `${e.tagName.toLowerCase()} "${(e.textContent || e.name || '').trim().slice(0, 30)}" ${Math.round(e.getBoundingClientRect().width)}×${Math.round(e.getBoundingClientRect().height)}`);
-  const tinyText = [...document.querySelectorAll('p,li,a,span,small,label')].filter(e => visible(e) && e.textContent.trim() && parseFloat(getComputedStyle(e).fontSize) < 12).length;
-  const inputsSmallFont = [...document.querySelectorAll('input,select,textarea')].filter(e => visible(e) && !e.closest('[aria-hidden="true"]') && parseFloat(getComputedStyle(e).fontSize) < 16).length;
+  const tinyText = [...document.querySelectorAll('p,li,a,span,small,label')].filter(e => visible(e) && !e.closest('[aria-hidden="true"]') && e.textContent.trim() && parseFloat(getComputedStyle(e).fontSize) < 12).length;
+  const inputsSmallFont = [...document.querySelectorAll('input:not([type=range]):not([type=checkbox]):not([type=radio]):not([type=submit]):not([type=button]),select,textarea')].filter(e => visible(e) && !e.closest('[aria-hidden="true"]') && parseFloat(getComputedStyle(e).fontSize) < 16).length;
   return { overflow, wide, ctaAboveFold, ctaCount: ctas.length, small, tinyText, inputsSmallFont, pageHeight: document.documentElement.scrollHeight };
 });
 if (mob.overflow) add('error', 'mobile-overflow', `Horizontal scroll on mobile. Elements wider than screen: ${mob.wide.join(', ')}`);

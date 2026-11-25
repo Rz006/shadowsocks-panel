@@ -1,6 +1,6 @@
 ---
 name: converting-website-builder
-description: Expert website development skill for building professional, high-converting, fast, accessible, distinctive websites and landing pages for clients — strategy, design system, conversion copy, section-by-section build, SEO, forms, deployment, and automated visual/quality audit with screenshots. Use this whenever the user wants to build, generate, redesign, clone-the-structure-of, or improve any website, landing page, homepage, portfolio, business site, booking site, restaurant/dentist/gym/salon/law/trades/real-estate/coach/SaaS site, or small online store front — in HTML/CSS, Tailwind, Astro, Next.js, React, WordPress, Webflow or Shopify — even if they just say "make me a website for my bakery" or "website gen".
+description: Expert website development skill for building professional, high-converting, fast, accessible, unique websites and landing pages for clients — creative direction, design system, conversion copy, animations, transitions, scroll effects and interactive media (magnetic buttons, spotlight/tilt cards, marquees, counters, sticky storytelling, before/after sliders, tabs, page transitions, video, 3D), SEO, forms, deployment, and an automated visual/quality/motion audit with screenshots. Use this whenever the user wants to build, generate, redesign, clone-the-structure-of, or improve any website, landing page, homepage, portfolio, business site, booking site, restaurant/dentist/gym/salon/law/trades/real-estate/coach/SaaS site, or small online store front — in HTML/CSS, Tailwind, Astro, Next.js, React, WordPress, Webflow or Shopify — or asks to make a site more modern, vibrant, animated, interactive, unique or "award-winning", even if they just say "make me a website for my bakery" or "website gen".
 ---
 
 # Website Builder (Converting, Professional, Distinctive)
@@ -44,7 +44,15 @@ If the user gives little, open `references/industry-playbooks.md`, take the matc
 
 Setup commands and form/booking backends are in `references/stacks.md`.
 
-## Phase 3 — Design system (do this before writing markup)
+## Phase 3 — Creative direction (what makes it unique)
+
+Before any styling, decide and write down in two lines:
+1. **Art direction** — one of: vibrant modern, Swiss/editorial, soft premium, bento/product, dark luxe, neo-brutalist, organic (or a justified blend). Pick it from the brand and audience, not habit.
+2. **Signature moment** — one memorable interaction tied to the business (dentist → before/after smile slider; plumber → 3-tap quote estimator; agency → magnetic CTA + cursor spotlight; restaurant → dish photos that follow the cursor over the menu).
+
+Then choose the **motion level** for the industry (low for medical/legal/finance, medium for local services and hospitality, high for agencies/creatives/startups). `references/motion-interaction.md` has the direction table, technique catalog with code, interactive media, libraries (GSAP, Motion, Lenis, Lottie, Three.js/Spline), page transitions (View Transitions API), and the performance/accessibility rules every effect must follow.
+
+## Phase 3b — Design system (do this before writing markup)
 
 Generic AI sites all look the same: centered hero, purple-blue gradient, Inter everywhere, three identical cards with emoji icons. Avoid that by making deliberate choices **from the brand and industry**, then encoding them as tokens. Read `references/design-system.md` for type pairings, palette construction, spacing, and layout patterns.
 
@@ -79,14 +87,17 @@ Build rules (these are what make a site feel professional):
 - **Layout**: CSS grid/flex, a max-width container, generous vertical rhythm (`--space`), asymmetry where it helps (split hero, offset image, bento grid) instead of everything centered.
 - **Images**: real photos > stock > illustrations. Always `width`/`height`, `alt`, `loading="lazy"` below the fold, hero `fetchpriority="high"`, AVIF/WebP via `<picture>` or framework image component. Use placeholder services only with a note to replace (e.g. `https://images.unsplash.com/...` with photographer credit, or solid color blocks).
 - **Icons**: inline SVG (Lucide/Heroicons/Phosphor) — not emoji.
-- **Interaction**: visible hover/focus states, `prefers-reduced-motion` respected, subtle motion only (fade/slide 150–300ms). No carousels for key content; no autoplay video with sound.
+- **Motion & interaction**: build the signature moment first, then layer supporting effects at the chosen motion level — staggered scroll reveals, headline word reveal, hover micro-interactions (button press, arrow nudge, underline grow), animated counters, marquee, spotlight/tilt cards, sticky scroll storytelling, tabs, smooth accordions, toasts, page transitions. Rules: animate only transform/opacity; content and CTAs visible without JS; everything calmed under `prefers-reduced-motion`; hover effects only for fine pointers; pause controls for anything moving > 5s; no scroll-jacking; never delay the hero's first paint. No carousels for key content; no autoplay video with sound.
 - **Forms**: labels, autocomplete attributes, inline errors, honeypot + Turnstile, server-side validation, success state, client notification. See `references/stacks.md` for backends.
 - **Trust & legal**: NAP in footer for local businesses, privacy policy link, cookie consent only if trackers require it.
 - **SEO basics**: unique title/meta, OG image, JSON-LD (`LocalBusiness` subtype etc.), sitemap, robots, canonical.
 - **Performance**: ≤ 2 font families (with `font-display:swap` and preconnect), no jQuery/slider libraries, defer third-party scripts, static generation.
 - Produce **complete files**, never fragments with "…rest of code here".
 
-For a fast, high-quality single page, copy `assets/starter-template.html` and adapt it: it already contains the token system, accessible nav, split hero, services, proof, process, FAQ (native `<details>`), CTA band, footer, sticky mobile CTA, and JSON-LD. Restyle it to the brand — don't ship it looking like the template.
+Two starter templates (single-file, no dependencies, audited clean) — copy the closer one and restyle it to the brand; never ship either looking like the template:
+- `assets/starter-template.html` — **calm/professional, low–medium motion** (soft premium direction): token system, accessible nav, split hero, bento services, stats + steps band, reviews, FAQ, booking form, sticky mobile CTA bar, JSON-LD.
+- `assets/interactive-template.html` — **vibrant/interactive, high motion** (vibrant modern direction): scroll progress bar (CSS scroll-driven), header that changes on scroll, animated gradient blobs + grain hero, word-by-word headline reveal, magnetic buttons, 3D tilt card, capability marquee, cursor-spotlight bento cards, animated counters, sticky scroll storytelling, before/after slider, accessible pricing tabs with sliding indicator, smooth-height FAQ, floating-label form with success toast, back-to-top, full reduced-motion support.
+Mix and match pieces from both — e.g. the calm template's layout with the interactive one's before/after slider.
 
 ## Phase 6 — Verify (don't skip)
 
@@ -94,7 +105,7 @@ If you can run code, audit what you built:
 ```bash
 node scripts/audit_site.mjs <path-or-url-to-page> [output-dir]
 ```
-It serves local files, captures desktop + mobile screenshots, and reports: h1 count, missing alt text, title/meta lengths, horizontal overflow on mobile, primary CTA above the fold on mobile, small tap targets, low-contrast text, broken internal links/anchors, console errors, and missing viewport/lang/OG/JSON-LD. **Look at the screenshots yourself** and fix anything that looks off (cramped spacing, awkward line breaks, weak hierarchy, contrast). Re-run until the report is clean.
+It opens the page in a real browser, captures desktop + mobile screenshots, and reports: h1 count and heading order, missing alt text, title/meta lengths, horizontal overflow on mobile, primary CTA above the fold on mobile, small tap targets, low-contrast text (measured against what is actually painted behind it), broken links/anchors, unlabeled form fields, console errors, page weight, missing viewport/lang/OG/JSON-LD, and motion accessibility (reduced-motion handling, autoplaying video, number of infinite animations). **Look at the screenshots yourself** and fix anything that looks off (cramped spacing, awkward line breaks, weak hierarchy, contrast). Re-run until the report is clean.
 
 Then run through `references/quality-checklist.md` (performance, accessibility, SEO, forms, security, content).
 
@@ -102,7 +113,7 @@ Then run through `references/quality-checklist.md` (performance, accessibility, 
 
 Give the user:
 1. The site files (or repo) and how to run/deploy it (one command each).
-2. A short design rationale (palette, type, layout choices tied to the brand).
+2. A short design rationale: art direction, signature moment, palette, type and motion choices tied to the brand.
 3. **Client to-do list**: real photos, testimonials, logo files, legal pages, form destination email, domain access.
 4. Screenshots (mobile + desktop) if you generated them.
 5. Suggested upsells that genuinely fit: AI chatbot (`ai-chatbot-integration`), lead follow-up emails (`ai-email-automation`), security hardening (`website-security-hardening`), SEO launch (`seo-launch-kit`), care plan (`client-handoff-maintenance`).
